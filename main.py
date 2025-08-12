@@ -126,6 +126,7 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = norm(update.message.text).replace(" ", "")
     attempts = int(context.user_data.get("code_attempts", 0))
 
+    # Проверка кода
     if code == SECRET_CODE:
         await send_block(chat, [
             "И снова угадал! 🎊",
@@ -136,6 +137,7 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.send_message("Выбери:", reply_markup=kb_end())
         return END_MENU
 
+    # Если код неверный
     attempts += 1
     context.user_data["code_attempts"] = attempts
     left = MAX_CODE_ATTEMPTS - attempts
