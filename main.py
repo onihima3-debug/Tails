@@ -54,14 +54,20 @@ def is_exact_cookie(text: str) -> bool:
         return False
     return t in ("печенье", "печенька")
 
-async def type_and_send(chat, text: str, delay: float = 1.6):
+async def type_and_send(chat, text: str, delay: float = 1.6, remove_kb=False):
     await chat.send_action(ChatAction.TYPING)
     await asyncio.sleep(delay)
-    await chat.send_message(text, parse_mode="HTML")
+    if remove_kb:
+        await chat.send_message(text, parse_mode="HTML", reply_markup=ReplyKeyboardRemove())
+    else:
+        await chat.send_message(text, parse_mode="HTML")
 
-async def send_block(chat, lines, per_line_delay: float = 1.3):
-    for line in lines:
-        await type_and_send(chat, line, delay=per_line_delay)
+async def send_block(chat, lines, per_line_delay: float = 1.3, remove_kb=False):
+    for i, line in enumerate(lines):
+        if i == 0 and remove_kb:
+            await type_and_send(chat, line, delay=per_line_delay, remove_kb=True)
+        else:
+            await type_and_send(chat, line, delay=per_line_delay)
 
 # ---------- сюжетные куски ----------
 async def start_quest(chat):
@@ -70,7 +76,7 @@ async def start_quest(chat):
         "Для того, чтобы я смог тебя направить на путь, должен произойти магический обмен 🌟",
         "Я бы и просто так помог, но такие условия для магии, ты прости. Даже выдающийся учёный тут бессилен, эх.",
         "Дай мне то, что я люблю всем сердцем! 🌌",
-    ], per_line_delay=1.3)
+    ], per_line_delay=1.3, remove_kb=True)
     await chat.send_message("Подсказка: круглое, обычно к чаю 🍪",
                             reply_markup=ReplyKeyboardRemove())
 
@@ -78,19 +84,19 @@ async def start_quest(chat):
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     context.user_data["code_attempts"] = 0
-    await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄")
-    await chat.send_message(BTN_WHO, reply_markup=kb_start())
+    await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄", remove_kb=True)
+    await chat.send_message(" ", reply_markup=kb_start())  # просто показываем кнопку
     return START
 
 async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    if norm(update.message.text) == norm(BTN_WHO) or update.message.text.strip() == "[Кто ты?]":
+    if norm(update.message.text) == norm(BTN_WHO):
         await send_block(chat, [
             "Я — волшебник! Тот самый, из сказок! 💫",
             "Правда…",
             "Я один день на этой должности: нужно заменить одного человека, а на самом деле я учёный…",
             "Но ладно! Я буду рад тебе помочь, сделаю всё возможное!",
-        ])
+        ], remove_kb=True)
         await start_quest(chat)
         return WAIT_COOKIE
 
@@ -106,8 +112,9 @@ async def wait_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<i>Она изменилась. Но свет остался прежним…</i>",
             "<i>Найди её. Вчера она сияла. Сегодня — она закодирована…</i>",
             "<i>Ответ лежит у повелительницы Кота во Фраке…</i>",
-        ])
-        await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.")
+        ], remove_kb=True)
+        await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.",
+                                reply_markup=ReplyKeyboardRemove())
         context.user_data["code_attempts"] = 0
         return WAIT_CODE
 
@@ -124,7 +131,7 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "И снова угадал! 🎊",
             "Да прибудет тем, кто ищет 🍀",
             "Удачи, странник! Я с тобой мысленно ✨",
-        ], per_line_delay=1.5)
+        ], per_line_delay=1.5, remove_kb=True)
         await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
         await chat.send_message("Выбери:", reply_markup=kb_end())
         return END_MENU
@@ -141,8 +148,7 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Увы, попытки закончились.",
             "Пусть удача улыбнётся тебе в следующий раз.",
             "Прощай, путник.",
-        ])
-        await chat.send_message(" ", reply_markup=ReplyKeyboardRemove())
+        ], remove_kb=True)
         return ConversationHandler.END
 
 async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,8 +156,7 @@ async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = norm(update.message.text)
 
     if choice == norm(BTN_NO):
-        await type_and_send(chat, "Хорошо! Удачи, путник 🤗", delay=1.4)
-        await chat.send_message(" ", reply_markup=ReplyKeyboardRemove())
+        await type_and_send(chat, "Хорошо! Удачи, путник 🤗", delay=1.4, remove_kb=True)
         return ConversationHandler.END
 
     if choice == norm(BTN_YES_STORY):
@@ -176,8 +181,7 @@ async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Что-то я заболтался 😄",
             "Спасибо, что ушёл не сразу! Это необычно, и я так рад 😇",
             "Береги себя, да прибудет с тобой удача! 🏵️",
-        ], per_line_delay=1.2)
-        await chat.send_message(" ", reply_markup=ReplyKeyboardRemove())
+        ], per_line_delay=1.2, remove_kb=True)
         return ConversationHandler.END
 
     await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
