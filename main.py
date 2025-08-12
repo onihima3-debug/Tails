@@ -1,11 +1,31 @@
 import os
 import asyncio
+
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ConversationHandler,
     ContextTypes, filters
 )
+
+# ---------- мини-сервер для Render (Web Service, Free) ----------
+from flask import Flask
+import threading
+
+app_flask = Flask(__name__)
+
+@app_flask.route("/")
+def home():
+    return "Tails Wizard Bot is running!"
+
+def run_flask():
+    # Render слушает любой порт, но 8080 — стандартно
+    app_flask.run(host="0.0.0.0", port=8080)
+
+# Запускаем Flask параллельно с Telegram-ботом
+threading.Thread(target=run_flask, daemon=True).start()
+# ---------------------------------------------------------------
+
 
 # -------- Состояния диалога --------
 (
