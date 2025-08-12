@@ -1,6 +1,9 @@
+# main.py
 import os
 import re
 import asyncio
+import threading
+from flask import Flask
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.constants import ChatAction
@@ -9,10 +12,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
-# ---------- мини-сервер для Render (Web Service, Free) ----------
-from flask import Flask
-import threading
-
+# ---------- мини-сервер для Render (бесплатный Web Service) ----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -22,13 +22,14 @@ def home():
 def run_flask():
     app_flask.run(host="0.0.0.0", port=8080)
 
+# поднимем Flask параллельно с ботом
 threading.Thread(target=run_flask, daemon=True).start()
-# ---------------------------------------------------------------
+# --------------------------------------------------------------------
 
-# -------- Состояния диалога --------
+# ---------- состояния -----------
 START, WAIT_COOKIE, WAIT_CODE, END_MENU = range(4)
 
-# -------- Кнопки --------
+# ---------- кнопки --------------
 BTN_WHO = "Кто ты?"
 BTN_YES_STORY = "Да, расскажешь мне что-то?"
 BTN_NO = "Нет"
@@ -39,37 +40,34 @@ def kb_start():
 def kb_end():
     return ReplyKeyboardMarkup([[BTN_NO, BTN_YES_STORY]], resize_keyboard=True)
 
-# -------- Настройки --------
+# ---------- настройки -----------
 SECRET_CODE = "28082003"
 MAX_CODE_ATTEMPTS = 3
 
-# -------- Нормализация --------
+# ---------- утилиты -------------
 def norm(s: str) -> str:
     return (s or "").lower().strip()
 
 def is_exact_cookie(text: str) -> bool:
     """
     Принимаем ТОЛЬКО ровно одно слово: 'печенье' или 'печенька'.
-    Никаких эмодзи/доп.слов/знаков. Допускаем ведущие/замыкающие пробелы.
+    Без эмодзи, цифр, знаков и доп.слов.
     """
     t = norm(text)
-    # Ровно буквенное одно слово
-    m = re.fullmatch(r"[а-яё]+", t)
-    if not m:
+    if not re.fullmatch(r"[а-яё]+", t):
         return False
     return t in ("печенье", "печенька")
 
-# -------- Утилиты отправки --------
-async def type_and_send(chat, text, delay=1.2):
+async def type_and_send(chat, text: str, delay: float = 1.2):
     await chat.send_action(ChatAction.TYPING)
     await asyncio.sleep(delay)
     await chat.send_message(text)
 
-async def send_block(chat, lines, per_line_delay=1.0):
+async def send_block(chat, lines, per_line_delay: float = 1.0):
     for line in lines:
         await type_and_send(chat, line, delay=per_line_delay)
 
-# -------- Сюжет --------
+# ---------- сюжетные куски -------
 async def start_quest(chat):
     await send_block(chat, [
         "Квест? Ох, чудесно! Нелегко начинать, но ты справишься!",
@@ -77,13 +75,13 @@ async def start_quest(chat):
         "Я бы и просто так помог, но такие условия для магии, ты прости. Даже выдающийся учёный тут бессилен, эх.",
         "Дай мне то, что я люблю всем сердцем! 🌌",
     ], per_line_delay=1.0)
-    await chat.send_message("Подсказка: круглое, обычно к чаю 🍪", reply_markup=ReplyKeyboardRemove())
+    await chat.send_message("Подсказка: круглое, обычно к чаю 🍪",
+                            reply_markup=ReplyKeyboardRemove())
 
-# -------- Хендлеры --------
+# ---------- хендлеры ------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    # сбрасываем счётчик попыток кода на новое начало
-    context.user_data["code_attempts"] = 0
+    context.user_data["code_attempts"] = 0  # сброс попыток
     await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄")
     await chat.send_message("Нажми кнопку ниже:", reply_markup=kb_start())
     return START
@@ -100,7 +98,7 @@ async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_quest(chat)
         return WAIT_COOKIE
 
-    # В начале — строго ведём по кнопке
+    # В начале ведём строго по кнопке
     await type_and_send(chat, "Нажми кнопку «Кто ты?» ниже.")
     return START
 
@@ -115,12 +113,12 @@ async def wait_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ответ лежит у повелительницы Кота во Фраке…",
         ], per_line_delay=1.0)
         await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.")
-        # обнулим счётчик на всякий случай перед вводом кода
         context.user_data["code_attempts"] = 0
         return WAIT_CODE
 
-    # Раньше «Хм?» не показываем — даём мягкую, но строгую подсказку
-    await type_and_send(chat, "Нужно одно слово без лишнего: «печенье» или «печенька». Попробуй ещё раз.")
+    # Не «Хм?», а строгая подсказка и остаёмся на шаге
+    await type_and_send(chat,
+        "Нужно одно слово без лишнего: «печенье» или «печенька». Попробуй ещё раз.")
     return WAIT_COOKIE
 
 async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,7 +132,7 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Да прибудет тем, кто ищет 🍀",
             "Удачи, странник! Я с тобой мысленно ✨",
         ], per_line_delay=1.1)
-        # Только в самом конце — финальное мини-меню
+        # «Хм? Что-то ещё?» — ТОЛЬКО в самом конце
         await send_block(chat, ["Хм? 😲", "Что-то ещё? 🤔"], per_line_delay=0.9)
         await chat.send_message("Выбери:", reply_markup=kb_end())
         return END_MENU
@@ -148,7 +146,6 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await type_and_send(chat, f"Не тот код. Осталось попыток: {left}. Попробуй ещё раз.")
         return WAIT_CODE
     else:
-        # попытки исчерпаны — финальное прощание и тишина
         await send_block(chat, [
             "Увы, попытки закончились.",
             "Пусть удача улыбнётся тебе в следующий раз.",
@@ -192,7 +189,7 @@ async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.send_message(" ", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    # Любой другой ответ в самом конце — можно повторить финальное меню
+    # Любой другой ответ здесь — повтор финального меню
     await send_block(chat, ["Хм? 😲", "Что-то ещё? 🤔"], per_line_delay=0.9)
     await chat.send_message("Выбери:", reply_markup=kb_end())
     return END_MENU
@@ -203,8 +200,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Диалог завершён. Напиши /start, чтобы начать заново.",
-                                    reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(
+        "Диалог завершён. Напиши /start, чтобы начать заново.",
+        reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 def build_app():
