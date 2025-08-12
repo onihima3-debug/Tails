@@ -1,4 +1,4 @@
-    # main.py
+# main.py
 import os
 import re
 import asyncio
@@ -48,7 +48,7 @@ def norm(s: str) -> str:
     return (s or "").lower().strip()
 
 def is_exact_cookie(text: str) -> bool:
-    """Только ровно одно слово: 'печенье' или 'печенька' (без лишних символов)."""
+    """Только ровно одно слово: 'печенье' или 'печенька'."""
     t = norm(text)
     if not re.fullmatch(r"[а-яё]+", t):
         return False
@@ -85,7 +85,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     context.user_data["code_attempts"] = 0
     await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄", remove_kb=True)
-    await chat.send_message(".", reply_markup=kb_start())  # Пустое сообщение с кнопкой
+    await chat.send_message("Выбери ниже:", reply_markup=kb_start())  # кнопка точно появится
     return START
 
 async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
