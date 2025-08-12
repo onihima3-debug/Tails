@@ -12,7 +12,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
-# ---------- мини-сервер для Render (Web Service, Free) ----------
+# ---------- мини-сервер для Render ----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -22,7 +22,6 @@ def home():
 def run_flask():
     app_flask.run(host="0.0.0.0", port=8080)
 
-# Поднимаем Flask параллельно с ботом
 threading.Thread(target=run_flask, daemon=True).start()
 # ---------------------------------------------------------------
 
@@ -58,7 +57,7 @@ def is_exact_cookie(text: str) -> bool:
 async def type_and_send(chat, text: str, delay: float = 1.6):
     await chat.send_action(ChatAction.TYPING)
     await asyncio.sleep(delay)
-    await chat.send_message(text)
+    await chat.send_message(text, parse_mode="HTML")
 
 async def send_block(chat, lines, per_line_delay: float = 1.3):
     for line in lines:
@@ -80,7 +79,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     context.user_data["code_attempts"] = 0
     await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄")
-    await chat.send_message("Нажми кнопку ниже:", reply_markup=kb_start())
+    await chat.send_message(BTN_WHO, reply_markup=kb_start())
     return START
 
 async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -95,7 +94,6 @@ async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_quest(chat)
         return WAIT_COOKIE
 
-    # В начале — ведём строго по кнопке
     await type_and_send(chat, "Нажми кнопку «Кто ты?» ниже.")
     return START
 
@@ -105,15 +103,14 @@ async def wait_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_block(chat, [
             "Ух, угадал, молодец! 🌀",
             "Хорошо. Разгадаешь загадку — получишь подсказку! 🌠",
-            "Она изменилась. Но свет остался прежним…",
-            "Найди её. Вчера она сияла. Сегодня — она закодирована…",
-            "Ответ лежит у повелительницы Кота во Фраке…",
+            "<i>Она изменилась. Но свет остался прежним…</i>",
+            "<i>Найди её. Вчера она сияла. Сегодня — она закодирована…</i>",
+            "<i>Ответ лежит у повелительницы Кота во Фраке…</i>",
         ])
         await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.")
         context.user_data["code_attempts"] = 0
         return WAIT_CODE
 
-    # Никаких подсказок с ответом
     await type_and_send(chat, "Нужно одно слово без лишнего.")
     return WAIT_COOKIE
 
@@ -128,12 +125,10 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Да прибудет тем, кто ищет 🍀",
             "Удачи, странник! Я с тобой мысленно ✨",
         ], per_line_delay=1.5)
-        # Финальное мини-меню — ТОЛЬКО здесь
-        await send_block(chat, ["Хм? 😲", "Что-то ещё? 🤔"], per_line_delay=1.2)
+        await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
         await chat.send_message("Выбери:", reply_markup=kb_end())
         return END_MENU
 
-    # Неверный код
     attempts += 1
     context.user_data["code_attempts"] = attempts
     left = MAX_CODE_ATTEMPTS - attempts
@@ -182,12 +177,10 @@ async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Спасибо, что ушёл не сразу! Это необычно, и я так рад 😇",
             "Береги себя, да прибудет с тобой удача! 🏵️",
         ], per_line_delay=1.2)
-        # убираем кнопки после рассказа
         await chat.send_message(" ", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    # Любой другой ответ в самом конце — повтор мини-меню
-    await send_block(chat, ["Хм? 😲", "Что-то ещё? 🤔"], per_line_delay=1.2)
+    await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
     await chat.send_message("Выбери:", reply_markup=kb_end())
     return END_MENU
 
