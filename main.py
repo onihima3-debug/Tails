@@ -12,7 +12,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
-# --- Flask server for Render ---
+# --- Flask server for Render (Free Web Service) ---
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -47,13 +47,13 @@ def norm(s: str) -> str:
     return (s or "").lower().strip()
 
 def is_exact_cookie(text: str) -> bool:
-    """Only exactly 'печенье' or 'печенька'."""
+    """Only exactly 'печенье' or 'печенька' (single word, letters only)."""
     t = norm(text)
     if not re.fullmatch(r"[а-яё]+", t):
         return False
     return t in ("печенье", "печенька")
 
-async def type_and_send(chat, text: str, delay: float = 1.5, remove_kb=False):
+async def type_and_send(chat, text: str, delay: float = 2.0, remove_kb: bool = False):
     await chat.send_action(ChatAction.TYPING)
     await asyncio.sleep(delay)
     if remove_kb:
@@ -61,33 +61,45 @@ async def type_and_send(chat, text: str, delay: float = 1.5, remove_kb=False):
     else:
         await chat.send_message(text, parse_mode="HTML")
 
-async def send_block(chat, lines, per_line_delay: float = 1.2, remove_kb=False):
+async def send_block(chat, lines, per_line_delay: float = 2.0, remove_kb: bool = False, magic_delay: float | None = None):
     for i, line in enumerate(lines):
+        d = magic_delay if (magic_delay and line.startswith("<i>")) else per_line_delay
         if i == 0 and remove_kb:
-            await type_and_send(chat, line, delay=per_line_delay, remove_kb=True)
+            await type_and_send(chat, line, delay=d, remove_kb=True)
         else:
-            await type_and_send(chat, line, delay=per_line_delay)
+            await type_and_send(chat, line, delay=d)
+
+def lock_user(context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["locked"] = True
+
+def is_locked(context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return bool(context.user_data.get("locked"))
 
 # --- Story parts ---
 async def start_quest(chat):
     await send_block(chat, [
-        "Я так понимаю, ты на квест, раз пришёл ко мне.",
+        "Я так понимаю, ты на квест, раз пришёл ко мне",
         "Для того, чтобы я смог тебя направить на путь, должен произойти магический обмен 🌟",
         "Я бы и просто так помог, но такие условия для магии, ты прости. Даже выдающийся учёный тут бессилен, эх.",
         "Дай мне то, что я люблю всем сердцем! 🌌",
     ], remove_kb=True)
-    await chat.send_message("Подсказка: круглое, обычно к чаю 🍪",
-                            reply_markup=ReplyKeyboardRemove())
+    await chat.send_message("Подсказка: круглое, обычно к чаю 🍪", reply_markup=ReplyKeyboardRemove())
 
 # --- Handlers ---
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
+    # Сбрасываем блокировку и попытки при новом старте
+    context.user_data.pop("locked", None)
     context.user_data["code_attempts"] = 0
+
+    chat = update.effective_chat
     await type_and_send(chat, "Привет, странник! Тебе нужна моя помощь? 🪄", remove_kb=True)
     await chat.send_message("Выбери ниже:", reply_markup=kb_start())
     return START
 
 async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_locked(context):
+        return ConversationHandler.END
+
     chat = update.effective_chat
     if norm(update.message.text) == norm(BTN_WHO):
         await send_block(chat, [
@@ -98,11 +110,14 @@ async def on_start_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ], remove_kb=True)
         await start_quest(chat)
         return WAIT_COOKIE
-    else:
-        await type_and_send(chat, "Нажми кнопку «Кто ты?» ниже.")
-        return START
+
+    await type_and_send(chat, "Нажми кнопку «Кто ты?» ниже.")
+    return START
 
 async def wait_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_locked(context):
+        return ConversationHandler.END
+
     chat = update.effective_chat
     if is_exact_cookie(update.message.text):
         await send_block(chat, [
@@ -111,16 +126,18 @@ async def wait_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<i>Она изменилась. Но свет остался прежним…</i>",
             "<i>Найди её. Вчера она сияла. Сегодня — она закодирована…</i>",
             "<i>Ответ лежит у повелительницы Кота во Фраке…</i>",
-        ], remove_kb=True)
-        await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.",
-                                reply_markup=ReplyKeyboardRemove())
+        ], remove_kb=True, magic_delay=3.0)
+        await chat.send_message("Когда найдёшь код — просто пришли его сюда числом.", reply_markup=ReplyKeyboardRemove())
         context.user_data["code_attempts"] = 0
         return WAIT_CODE
-    else:
-        await type_and_send(chat, "Нужно одно слово без лишнего.")
-        return WAIT_COOKIE
+
+    await type_and_send(chat, "Нужно одно слово без лишнего.")
+    return WAIT_COOKIE
 
 async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_locked(context):
+        return ConversationHandler.END
+
     chat = update.effective_chat
     code = norm(update.message.text).replace(" ", "")
     attempts = int(context.user_data.get("code_attempts", 0))
@@ -131,10 +148,11 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Да прибудет тем, кто ищет 🍀",
             "Удачи, странник! Я с тобой мысленно ✨",
         ], remove_kb=True)
-        await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
+        await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=2.0)
         await chat.send_message("Выбери:", reply_markup=kb_end())
         return END_MENU
 
+    # wrong code
     attempts += 1
     context.user_data["code_attempts"] = attempts
     left = MAX_CODE_ATTEMPTS - attempts
@@ -148,14 +166,19 @@ async def wait_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Пусть удача улыбнётся тебе в следующий раз.",
             "Прощай, путник.",
         ], remove_kb=True)
+        lock_user(context)
         return ConversationHandler.END
 
 async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_locked(context):
+        return ConversationHandler.END
+
     chat = update.effective_chat
     choice = norm(update.message.text)
 
     if choice == norm(BTN_NO):
         await type_and_send(chat, "Хорошо! Удачи, путник 🤗", remove_kb=True)
+        lock_user(context)
         return ConversationHandler.END
 
     if choice == norm(BTN_YES_STORY):
@@ -180,12 +203,20 @@ async def end_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Что-то я заболтался 😄",
             "Спасибо, что ушёл не сразу! Это необычно, и я так рад 😇",
             "Береги себя, да прибудет с тобой удача! 🏵️",
-        ], per_line_delay=1.2, remove_kb=True)
+        ], per_line_delay=2.0, remove_kb=True)
+        lock_user(context)
         return ConversationHandler.END
 
-    await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=1.2)
+    # любой другой ответ — повтор финального меню
+    await send_block(chat, ["Могу ли я тебе ещё чем-то помочь?"], per_line_delay=2.0)
     await chat.send_message("Выбери:", reply_markup=kb_end())
     return END_MENU
+
+# --- Global guard: ignore any text if user is locked (after finale) ---
+async def guard_locked(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if is_locked(context):
+        # Игнорируем всё, кроме /start (который перезапустит сценарий)
+        return
 
 # --- Build app ---
 def build_app():
@@ -203,12 +234,14 @@ def build_app():
             WAIT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, wait_code)],
             END_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, end_menu)],
         },
-        fallbacks=[CommandHandler("cancel", lambda u, c: ConversationHandler.END)],
-        allow_reentry=True
+        fallbacks=[CommandHandler("start", cmd_start)],  # /start всегда перезапускает
+        allow_reentry=True,
     )
 
     app.add_handler(conv)
+    # Этот обработчик идёт ПОСЛЕ conv и «глушит» любые тексты у завершивших сюжет
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guard_locked))
     return app
 
 if __name__ == "__main__":
-    build_app().run_polling()
+    build_app().run_polling(allowed_updates=Update.ALL_TYPES)
